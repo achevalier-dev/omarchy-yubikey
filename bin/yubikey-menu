@@ -1,0 +1,140 @@
+#!/bin/bash
+# yubikey-menu — YubiKey actions for the Omarchy menu.
+#
+# Wired up from ~/.config/omarchy/extensions/omarchy-menu.jsonc. Anything that
+# needs a PIN, a password, or a long readout opens a floating terminal; the
+# rest reports back through Omarchy notifications.
+#
+# CCID applications (OATH, PIV, OpenPGP) need the pcscd socket running.
+# FIDO and OTP talk over raw HID and work without it.
+
+set -uo pipefail
+
+GLYPH=""
+CLIPBOARD_TIMEOUT=30
+
+notify() { omarchy-notification-send -g "$GLYPH" "YubiKey" "$1"; }
+fail() {
+  notify "$1"
+  exit 1
+}
+
+terminal() { omarchy-launch-floating-terminal-with-presentation "$@"; }
+
+require_ykman() { command -v ykman >/dev/null || fail "ykman is not installed"; }
+
+# Serial numbers of attached keys, or a diagnosis of why there are none.
+require_key() {
+  local out
+  out=$(timeout 15 ykman list --serials 2>&1)
+
+  if grep -qE '^[0-9]+$' <<<"$out"; then
+    return 0
+  fi
+
+  if grep -q 'PC/SC not available' <<<"$out"; then
+    fail "Smart card daemon is not running — enable it from the YubiKey menu"
+  fi
+
+  fail "No YubiKey detected — insert your key and try again"
+}
+
+pick() { # $1: rows, $2: prompt
+  local rows=$1 prompt=$2
+  [[ -n $rows ]] || return 1
+  printf '%s\n' "$rows" | omarchy-menu-select "$prompt"
+}
+
+label_of() { printf '%s' "${1%%$'\t'*}"; }
+
+cmd=${1:-info}
+
+require_ykman
+
+case "$cmd" in
+info)
+  terminal 'ykman info'
+  ;;
+
+code)
+  require_key
+
+  if ! accounts=$(timeout 20 ykman oath accounts list 2>&1); then
+    # A password-protected OATH application needs a prompt we cannot draw here.
+    if grep -qi 'password' <<<"$accounts"; then
+      notify "OATH is password protected — unlock it in the terminal"
+      terminal 'ykman oath accounts code'
+      exit 0
+    fi
+    fail "Could not read OATH accounts: $(head -n1 <<<"$accounts")"
+  fi
+
+  [[ -n $accounts ]] || fail "This YubiKey has no OATH accounts stored"
+
+  rows=$(while IFS= read -r account; do
+    [[ -n $account ]] && printf '%s\t%s\t%s\n' "$GLYPH" "$account" "$account"
+  done <<<"$accounts")
+
+  selection=$(pick "$rows" "2FA code") || exit 0
+  account=$(label_of "$selection")
+
+  notify "Fetching a code for $account — touch your key if it blinks"
+
+  if ! code=$(timeout 30 ykman oath accounts code --single "$account" 2>&1) || [[ -z $code ]]; then
+    fail "Could not generate a code for $account"
+  fi
+
+  code=$(tr -d '[:space:]' <<<"$code")
+  printf '%s' "$code" | wl-copy
+
+  # A one-time code has no business outliving its use.
+  (
+    sleep "$CLIPBOARD_TIMEOUT"
+    [[ $(wl-paste --no-newline 2>/dev/null) == "$code" ]] && wl-copy --clear
+  ) >/dev/null 2>&1 &
+
+  notify "$code copied for $account — clears in ${CLIPBOARD_TIMEOUT}s"
+  ;;
+
+accounts)
+  terminal 'ykman oath accounts list'
+  ;;
+
+piv)
+  terminal 'ykman piv info'
+  ;;
+
+fido)
+  terminal 'ykman fido info'
+  ;;
+
+credentials)
+  terminal 'ykman fido credentials list'
+  ;;
+
+openpgp)
+  terminal 'ykman openpgp info'
+  ;;
+
+otp)
+  terminal 'ykman otp info'
+  ;;
+
+# The usual cure when the card stops answering after a suspend or a re-plug.
+reset-gpg)
+  terminal 'gpgconf --kill scdaemon gpg-agent; gpg --card-status'
+  ;;
+
+smartcard)
+  terminal 'sudo systemctl enable --now pcscd.socket; systemctl status pcscd.socket --no-pager'
+  ;;
+
+authenticator)
+  omarchy-launch-or-focus authenticator 'uwsm-app -- /opt/yubico-authenticator/authenticator'
+  ;;
+
+*)
+  echo "Usage: yubikey-menu <info|code|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
+  exit 1
+  ;;
+esac
