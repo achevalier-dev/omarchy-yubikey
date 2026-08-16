@@ -47,6 +47,94 @@ pick() { # $1: rows, $2: prompt
 
 label_of() { printf '%s' "${1%%$'\t'*}"; }
 
+
+# ── Context matching ─────────────────────────────────────────────────────────
+# The focused window is the best hint about which account you want. Login pages
+# almost always name the service ("Sign in to GitHub · GitHub"), and native apps
+# name it in the window class. Matches are floated to the top of the picker and
+# nothing is ever picked for you.
+
+STOPWORDS=" com www net org co uk io app the and for your new tab page home sign login log account accounts secure security verify verification two factor authentication authenticator browser brave chrome chromium firefox mozilla zen google window private "
+
+# Lowercased words from the focused window, minus browser chrome and noise.
+context_tokens() {
+  local window class title text
+  window=$(hyprctl activewindow -j 2>/dev/null) || return 0
+  class=$(jq -r '.class // ""' <<<"$window")
+  title=$(jq -r '.title // ""' <<<"$window")
+
+  text=$(tr '[:upper:]' '[:lower:]' <<<"$class $title")
+  tr -cs '[:alnum:]' '\n' <<<"$text" |
+    while IFS= read -r word; do
+      ((${#word} >= 3)) || continue
+      [[ $STOPWORDS == *" $word "* ]] && continue
+      # This machine's own name is in every terminal title; it says nothing
+      # about which account you want.
+      [[ $word == "$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]')" ]] && continue
+      [[ $word == "$(id -un | tr '[:upper:]' '[:lower:]')" ]] && continue
+      printf '%s\n' "$word"
+    done | sort -u
+}
+
+# Prints "score<TAB>account" for each account on stdin.
+rank_accounts() {
+  local -a tokens=()
+  mapfile -t tokens < <(context_tokens)
+
+  local account lower score token
+  while IFS= read -r account; do
+    [[ -n $account ]] || continue
+    lower=$(tr '[:upper:]' '[:lower:]' <<<"$account")
+    score=0
+    for token in "${tokens[@]}"; do
+      [[ -n $token && $lower == *"$token"* ]] || continue
+      ((score += ${#token} >= 5 ? 60 : 30))
+    done
+    printf '%s\t%s\n' "$score" "$account"
+  done
+}
+
+# Short label for what we matched against, e.g. "brave-browser".
+context_label() {
+  hyprctl activewindow -j 2>/dev/null | jq -r '.class // ""'
+}
+
+# Picks an account and prints "<code>\t<account>". Ranked rows, matches first.
+pick_code() {
+  local accounts rows label
+  if ! accounts=$(timeout 20 ykman oath accounts list 2>&1); then
+    if grep -qi 'password' <<<"$accounts"; then
+      notify "OATH is password protected — unlock it in the terminal"
+      terminal 'ykman oath accounts code'
+      exit 0
+    fi
+    fail "Could not read OATH accounts: $(head -n1 <<<"$accounts")"
+  fi
+  [[ -n $accounts ]] || fail "This YubiKey has no OATH accounts stored"
+
+  label=$(context_label)
+  rows=$(rank_accounts <<<"$accounts" | sort -s -rn -k1,1 | while IFS=$'\t' read -r score account; do
+    if ((score > 0)); then
+      printf '%s\t%s\t%s\n' "$GLYPH" "$account" "matches this window"
+    else
+      printf '%s\t%s\n' "$GLYPH" "$account"
+    fi
+  done)
+
+  local selection account
+  selection=$(printf '%s\n' "$rows" | omarchy-menu-select "2FA code") || return 1
+  account=$(label_of "$selection")
+
+  notify "Fetching a code for $account — touch your key if it blinks"
+
+  local code
+  if ! code=$(timeout 30 ykman oath accounts code --single "$account" 2>&1) || [[ -z $code ]]; then
+    fail "Could not generate a code for $account"
+  fi
+
+  printf '%s\t%s\n' "$(tr -d '[:space:]' <<<"$code")" "$account"
+}
+
 cmd=${1:-info}
 
 require_ykman
@@ -58,33 +146,10 @@ info)
 
 code)
   require_key
+  result=$(pick_code) || exit 0
+  code=${result%%$'\t'*}
+  account=${result##*$'\t'}
 
-  if ! accounts=$(timeout 20 ykman oath accounts list 2>&1); then
-    # A password-protected OATH application needs a prompt we cannot draw here.
-    if grep -qi 'password' <<<"$accounts"; then
-      notify "OATH is password protected — unlock it in the terminal"
-      terminal 'ykman oath accounts code'
-      exit 0
-    fi
-    fail "Could not read OATH accounts: $(head -n1 <<<"$accounts")"
-  fi
-
-  [[ -n $accounts ]] || fail "This YubiKey has no OATH accounts stored"
-
-  rows=$(while IFS= read -r account; do
-    [[ -n $account ]] && printf '%s\t%s\t%s\n' "$GLYPH" "$account" "$account"
-  done <<<"$accounts")
-
-  selection=$(pick "$rows" "2FA code") || exit 0
-  account=$(label_of "$selection")
-
-  notify "Fetching a code for $account — touch your key if it blinks"
-
-  if ! code=$(timeout 30 ykman oath accounts code --single "$account" 2>&1) || [[ -z $code ]]; then
-    fail "Could not generate a code for $account"
-  fi
-
-  code=$(tr -d '[:space:]' <<<"$code")
   printf '%s' "$code" | wl-copy
 
   # A one-time code has no business outliving its use.
@@ -94,6 +159,29 @@ code)
   ) >/dev/null 2>&1 &
 
   notify "$code copied for $account — clears in ${CLIPBOARD_TIMEOUT}s"
+  ;;
+
+# Types the code straight into the field you were looking at, so it never
+# touches the clipboard at all.
+type)
+  require_key
+  command -v wtype >/dev/null || fail "wtype is not installed — use the clipboard action instead"
+
+  # The picker takes focus, so remember the window to type back into.
+  target=$(hyprctl activewindow -j 2>/dev/null | jq -r '.address // ""')
+
+  result=$(pick_code) || exit 0
+  code=${result%%$'\t'*}
+  account=${result##*$'\t'}
+
+  if [[ -n $target ]]; then
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$target\" })" >/dev/null 2>&1 ||
+      hyprctl dispatch focuswindow "address:$target" >/dev/null 2>&1
+    sleep 0.25
+  fi
+
+  wtype -- "$code" || fail "Could not type the code for $account"
+  notify "Typed a code for $account"
   ;;
 
 accounts)
@@ -134,7 +222,7 @@ authenticator)
   ;;
 
 *)
-  echo "Usage: yubikey-menu <info|code|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
+  echo "Usage: yubikey-menu <info|code|type|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
   exit 1
   ;;
 esac

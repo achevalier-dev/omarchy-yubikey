@@ -16,6 +16,8 @@ omarchy menu summon yubikey
   clears itself 30 seconds later. Prompts you to touch the key when the account
   requires it, and falls back to a terminal if the OATH application is password
   protected.
+- **Type 2FA Code** — the same, but typed straight into the field you were
+  looking at with `wtype`, so the code never touches the clipboard at all.
 - **Key Info** — serial, firmware, and which applications are enabled
 - **OATH Accounts** — what is stored on the key
 - **Authenticator** — launches Yubico Authenticator, or focuses it if it is
@@ -66,6 +68,21 @@ echo disable-ccid >> ~/.gnupg/scdaemon.conf
 gpgconf --kill scdaemon gpg-agent
 ```
 
+## Service detection
+
+Both code actions read the focused window first — `hyprctl activewindow` gives
+the class and title — and float the accounts that match to the top of the
+picker. A login page almost always names its service ("Sign in to GitHub ·
+GitHub" → `Github:…`, "Log in | MongoDB Cloud" → `auth.mongodb.com:…`), and
+native apps name it in their window class. Domains inside an account name are
+matched too, which covers the entries an authenticator app wrote as raw
+hostnames.
+
+Matching only ever **reorders** the list. Nothing is picked or typed for you,
+and every account stays reachable — a wrong guess costs you a keystroke, never
+a wrong credential. This machine's own hostname and username are ignored so a
+terminal window does not produce phantom matches.
+
 ## How it works
 
 `bin/yubikey-menu` is a plain bash script — no daemon, no background process.
@@ -75,6 +92,7 @@ for anything interactive. Usable on its own:
 
 ```bash
 yubikey-menu code        # pick an account, copy the code
+yubikey-menu type        # pick an account, type the code into the focused field
 yubikey-menu info        # ykman info in a floating terminal
 yubikey-menu reset-gpg   # restart scdaemon and re-read the card
 ```

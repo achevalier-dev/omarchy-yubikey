@@ -1,5 +1,9 @@
+  // ── YubiKey ────────────────────────────────────────────────────────────────
+  // Actions run through ~/.local/bin/yubikey-menu. Anything needing a PIN or a
+  // long readout opens a floating terminal; the rest notifies.
   "yubikey": {"icon":"󰟵","label":"YubiKey","aliases":["yubi","2fa"],"description":"YubiKey codes, applications, and repair","when":"omarchy-cmd-present ykman"},
-  "yubikey.code": {"icon":"󰆏","label":"2FA Code","aliases":["otp","totp"],"description":"Copy a one-time code to the clipboard","action":"yubikey-menu code"},
+  "yubikey.code": {"icon":"󰆏","label":"2FA Code","aliases":["otp","totp"],"description":"Copy a code to the clipboard — accounts matching the focused window come first","action":"yubikey-menu code"},
+  "yubikey.type": {"icon":"󰌌","label":"Type 2FA Code","aliases":["type","autotype"],"description":"Type the code into the field you were looking at, never touching the clipboard","when":"omarchy-cmd-present wtype","action":"yubikey-menu type"},
   "yubikey.info": {"icon":"󰇅","label":"Key Info","description":"Serial, firmware, and enabled applications","action":"yubikey-menu info"},
   "yubikey.accounts": {"icon":"󰍜","label":"OATH Accounts","action":"yubikey-menu accounts"},
   "yubikey.authenticator": {"icon":"󰢁","label":"Authenticator","when":"[[ -x /opt/yubico-authenticator/authenticator ]]","action":"yubikey-menu authenticator"},
