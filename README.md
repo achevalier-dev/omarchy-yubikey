@@ -1,8 +1,27 @@
 # omarchy-yubikey
 
-YubiKey for [Omarchy](https://omarchy.org): menu entries for the things you
-actually reach for — a 2FA code on the clipboard, the applications on the key,
-and the two repairs that fix a key that has stopped answering.
+YubiKey for [Omarchy](https://omarchy.org): a bar widget that knows whether your
+key is plugged in, a panel of your codes ranked by what you are looking at, and
+menu entries for the applications on the key and the repairs that fix one that
+has stopped answering.
+
+![the bar widget and its panel](preview.png)
+
+*(account names and serial blurred — they are real)*
+
+## In the bar
+
+The key icon is bright when a YubiKey is plugged in and dimmed when it is not.
+Presence is read from sysfs, so it costs nothing and updates the moment you
+plug in or pull out — `ykman` is only run when there is something to ask it.
+
+- **Left click** opens the panel
+- **Right click** types a code into the focused field
+- **Middle click** shows the key's info
+
+The panel lists your OATH accounts with the ones matching the focused window
+first, a countdown to the next code rotation, and the key's model and serial.
+Type to filter, `enter` copies, `tab` or right-click types, `esc` closes.
 
 ## What you get
 
@@ -32,10 +51,19 @@ terminal. Everything else reports back as a notification.
 
 ## Install
 
+The bar widget, as an Omarchy shell plugin:
+
 ```bash
-git clone https://github.com/achevalier-dev/omarchy-yubikey.git
-cd omarchy-yubikey && ./install.sh
+omarchy plugin add https://github.com/achevalier-dev/omarchy-yubikey.git --enable
 ```
+
+Then the menu rows and the CLI helper:
+
+```bash
+~/.config/omarchy/plugins/io.github.achevalier-dev.yubikey/install.sh
+```
+
+Menu rows and CLI without the bar widget: clone anywhere and run `./install.sh`.
 
 `install.sh` symlinks `bin/yubikey-menu` into `~/.local/bin` and merges the menu
 rows into `~/.config/omarchy/extensions/omarchy-menu.jsonc`, backing the file up
@@ -55,6 +83,7 @@ first. It is safe to re-run — the block is replaced, never duplicated.
   The menu's *Troubleshoot → Enable Smart Card Daemon* row does this for you,
   and hides itself once pcscd is running.
 
+- `wtype` for typing codes (the clipboard is the fallback)
 - Optional: `yubico-authenticator` for the GUI row
 
 ### GnuPG and pcscd
@@ -100,6 +129,7 @@ yubikey-menu reset-gpg   # restart scdaemon and re-read the card
 ## Uninstall
 
 ```bash
+omarchy plugin remove io.github.achevalier-dev.yubikey
 rm ~/.local/bin/yubikey-menu
 ```
 

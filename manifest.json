@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.achevalier-dev.yubikey",
+  "name": "YubiKey",
+  "version": "1.0.0",
+  "author": "achevalier-dev",
+  "license": "MIT",
+  "description": "YubiKey presence in the Omarchy bar, with a panel of OATH accounts matched to the focused window.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "YubiKeyPanel.qml"
+  },
+  "barWidget": {
+    "displayName": "YubiKey",
+    "description": "Shows whether a YubiKey is plugged in. The panel lists OATH accounts with the ones matching the focused window first; enter copies a code, tab types it.",
+    "category": "Security",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "autoType": true
+    },
+    "schema": [
+      {
+        "key": "autoType",
+        "type": "boolean",
+        "label": "Allow typing codes",
+        "description": "Type the code into the focused field with wtype instead of only copying it.",
+        "defaultValue": true
+      }
+    ]
+  }
+}

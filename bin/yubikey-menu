@@ -100,7 +100,8 @@ context_label() {
 }
 
 # Picks an account and prints "<code>\t<account>". Ranked rows, matches first.
-pick_code() {
+pick_code() { # $1: account to use directly, or empty to draw the picker
+  local wanted=${1:-}
   local accounts rows label
   if ! accounts=$(timeout 20 ykman oath accounts list 2>&1); then
     if grep -qi 'password' <<<"$accounts"; then
@@ -122,8 +123,12 @@ pick_code() {
   done)
 
   local selection account
-  selection=$(printf '%s\n' "$rows" | omarchy-menu-select "2FA code") || return 1
-  account=$(label_of "$selection")
+  if [[ -n $wanted ]]; then
+    account=$wanted
+  else
+    selection=$(printf '%s\n' "$rows" | omarchy-menu-select "2FA code") || return 1
+    account=$(label_of "$selection")
+  fi
 
   notify "Fetching a code for $account — touch your key if it blinks"
 
@@ -146,7 +151,7 @@ info)
 
 code)
   require_key
-  result=$(pick_code) || exit 0
+  result=$(pick_code "${2:-}") || exit 0
   code=${result%%$'\t'*}
   account=${result##*$'\t'}
 
@@ -170,7 +175,7 @@ type)
   # The picker takes focus, so remember the window to type back into.
   target=$(hyprctl activewindow -j 2>/dev/null | jq -r '.address // ""')
 
-  result=$(pick_code) || exit 0
+  result=$(pick_code "${2:-}") || exit 0
   code=${result%%$'\t'*}
   account=${result##*$'\t'}
 
@@ -222,7 +227,7 @@ authenticator)
   ;;
 
 *)
-  echo "Usage: yubikey-menu <info|code|type|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
+  echo "Usage: yubikey-menu <info|code [account]|type [account]|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
   exit 1
   ;;
 esac
