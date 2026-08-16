@@ -11,7 +11,8 @@ has stopped answering.
 
 ## In the bar
 
-The key icon is bright when a YubiKey is plugged in and dimmed when it is not.
+The key icon is bright when a YubiKey is plugged in, and swaps to a dimmed
+alert glyph when it is not — so a missing key reads as a state, not an absence.
 Presence is read from sysfs, so it costs nothing and updates the moment you
 plug in or pull out — `ykman` is only run when there is something to ask it.
 
@@ -19,9 +20,16 @@ plug in or pull out — `ykman` is only run when there is something to ask it.
 - **Right click** types a code into the focused field
 - **Middle click** shows the key's info
 
-The panel lists your OATH accounts with the ones matching the focused window
-first, a countdown to the next code rotation, and the key's model and serial.
-Type to filter, `enter` copies, `tab` or right-click types, `esc` closes.
+The panel opens on the key's model, serial, and a countdown to the next code
+rotation, then a **KEY** section (info, applications, troubleshoot) and an
+**ACCOUNTS** section listing your OATH accounts with the ones matching the
+focused window first. Type to filter, `enter` copies, `tab` or right-click
+types, `esc` closes. With no key plugged in the panel says so and offers
+nothing that cannot work.
+
+The menu behaves the same way: the YubiKey row carries a ✓ while a key is
+present, the code and application rows hide themselves when it is not, and a
+**No YubiKey Detected** row takes their place.
 
 ## What you get
 

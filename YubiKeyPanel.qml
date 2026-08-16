@@ -64,9 +64,33 @@ Panel {
   }
 
   readonly property string stateText: {
-    if (!present) return "No key"
+    if (!present) return "Not plugged in"
     if (loading) return "Reading key…"
     return accounts.length + (accounts.length === 1 ? " account" : " accounts")
+  }
+
+  // omarchy renders this glyph itself, so the font is guaranteed to have it.
+  readonly property string glyph: present ? "󰌆" : "󰅙"
+
+  // Rows under the account list, in the shape the first-party panels use: a
+  // label that hands off to the terminal or the menu.
+  readonly property var actionKeys: ["info", "applications", "troubleshoot"]
+
+  function labelFor(key) {
+    switch (key) {
+    case "info": return "Key info"
+    case "applications": return "Applications…"
+    case "troubleshoot": return "Troubleshoot…"
+    }
+    return key
+  }
+
+  function runAction(key) {
+    close()
+    if (!bar) return
+    if (key === "info") bar.run("yubikey-menu info")
+    else if (key === "applications") bar.run("omarchy-menu summon yubikey.applications")
+    else if (key === "troubleshoot") bar.run("omarchy-menu summon yubikey.fix")
   }
 
   visible: true
@@ -249,7 +273,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰌆"
+    text: root.glyph
     dimmed: !root.present
     tooltipText: root.present ? (root.product || "YubiKey") + " · click for codes" : "No YubiKey plugged in"
 
@@ -323,7 +347,7 @@ Panel {
 
             iconComponent: Component {
               Text {
-                text: "󰌆"
+                text: root.glyph
                 color: root.present ? root.foreground : root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
@@ -333,11 +357,27 @@ Panel {
 
           Text {
             width: parent.width
-            text: root.present ? (root.product + (root.serial ? " · " + root.serial : "")) : "Plug in your key to see its accounts."
+            visible: root.present
+            text: root.product + (root.serial ? " · " + root.serial : "")
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             elide: Text.ElideRight
+          }
+
+          Column {
+            width: parent.width
+            visible: !root.present
+            spacing: Style.space(8)
+
+            Text {
+              width: parent.width
+              text: "No YubiKey is plugged in. Insert it and this panel fills in on its own — presence comes from udev, so there is nothing to refresh."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
           }
 
           Text {
@@ -349,9 +389,59 @@ Panel {
             font.pixelSize: Style.font.caption
           }
 
-          PanelSeparator {
-            foreground: root.foreground
+          PanelSeparator { foreground: root.foreground }
+
+          Column {
+            width: parent.width
             visible: root.present
+            spacing: Style.space(6)
+
+            PanelSectionHeader {
+              text: "KEY"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Repeater {
+              model: root.actionKeys
+
+              Rectangle {
+                id: actionRow
+                required property string modelData
+                width: parent.width
+                implicitHeight: Style.space(32)
+                radius: Style.cornerRadius > 0 ? Style.space(8) : 0
+                color: "transparent"
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.left: parent.left
+                  anchors.leftMargin: Style.space(10)
+                  text: root.labelFor(actionRow.modelData)
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onEntered: parent.color = Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+                  onExited: parent.color = "transparent"
+                  onClicked: root.runAction(actionRow.modelData)
+                }
+              }
+            }
+          }
+
+          PanelSeparator { foreground: root.foreground }
+
+          PanelSectionHeader {
+            visible: root.present
+            text: "ACCOUNTS"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
           }
 
           Text {
@@ -427,9 +517,11 @@ Panel {
 
           Text {
             width: parent.width
-            text: root.typeAvailable
-              ? "type to filter · enter copy · tab or right-click type · esc close"
-              : "type to filter · enter copy · esc close"
+            text: !root.present
+              ? "esc close"
+              : (root.typeAvailable
+                ? "type to filter · enter copy · tab or right-click type · esc close"
+                : "type to filter · enter copy · esc close")
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

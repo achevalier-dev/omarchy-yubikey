@@ -1,13 +1,14 @@
   // ── YubiKey ────────────────────────────────────────────────────────────────
   // Actions run through ~/.local/bin/yubikey-menu. Anything needing a PIN or a
   // long readout opens a floating terminal; the rest notifies.
-  "yubikey": {"icon":"󰟵","label":"YubiKey","aliases":["yubi","2fa"],"description":"YubiKey codes, applications, and repair","when":"omarchy-cmd-present ykman"},
-  "yubikey.code": {"icon":"󰆏","label":"2FA Code","aliases":["otp","totp"],"description":"Copy a code to the clipboard — accounts matching the focused window come first","action":"yubikey-menu code"},
-  "yubikey.type": {"icon":"󰌌","label":"Type 2FA Code","aliases":["type","autotype"],"description":"Type the code into the field you were looking at, never touching the clipboard","when":"omarchy-cmd-present wtype","action":"yubikey-menu type"},
+  "yubikey": {"icon":"󰌆","label":"YubiKey","aliases":["yubi","2fa"],"description":"YubiKey codes, applications, and repair","when":"omarchy-cmd-present ykman","checked":"yubikey-menu present"},
+  "yubikey.absent": {"icon":"󰅙","label":"No YubiKey Detected","description":"Plug in your key to generate codes","when":"! yubikey-menu present","action":"yubikey-menu status"},
+  "yubikey.code": {"icon":"󰆏","label":"2FA Code","aliases":["otp","totp"],"description":"Copy a code to the clipboard — accounts matching the focused window come first","action":"yubikey-menu code","when":"yubikey-menu present"},
+  "yubikey.type": {"icon":"󰌌","label":"Type 2FA Code","aliases":["type","autotype"],"description":"Type the code into the field you were looking at, never touching the clipboard","when":"omarchy-cmd-present wtype && yubikey-menu present","action":"yubikey-menu type"},
   "yubikey.info": {"icon":"󰇅","label":"Key Info","description":"Serial, firmware, and enabled applications","action":"yubikey-menu info"},
-  "yubikey.accounts": {"icon":"󰍜","label":"OATH Accounts","action":"yubikey-menu accounts"},
+  "yubikey.accounts": {"icon":"󰍜","label":"OATH Accounts","action":"yubikey-menu accounts","when":"yubikey-menu present"},
   "yubikey.authenticator": {"icon":"󰢁","label":"Authenticator","when":"[[ -x /opt/yubico-authenticator/authenticator ]]","action":"yubikey-menu authenticator"},
-  "yubikey.applications": {"icon":"󰐱","label":"Applications","title":"YubiKey Applications"},
+  "yubikey.applications": {"icon":"󰐱","label":"Applications","title":"YubiKey Applications","when":"yubikey-menu present"},
   "yubikey.applications.piv": {"icon":"󰢁","label":"PIV","description":"Smart card certificates and keys","action":"yubikey-menu piv"},
   "yubikey.applications.fido": {"icon":"󰈷","label":"FIDO2","action":"yubikey-menu fido"},
   "yubikey.applications.credentials": {"icon":"󰍜","label":"Passkeys","description":"Discoverable FIDO2 credentials on the key","action":"yubikey-menu credentials"},

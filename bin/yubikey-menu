@@ -23,6 +23,17 @@ terminal() { omarchy-launch-floating-terminal-with-presentation "$@"; }
 
 require_ykman() { command -v ykman >/dev/null || fail "ykman is not installed"; }
 
+# Yubico's USB vendor id is 1050. Reading sysfs answers "is it plugged in" in
+# microseconds, which is what menu guards and the bar need — ykman takes half a
+# second and is saved for questions only it can answer.
+key_present() {
+  local id
+  for id in /sys/bus/usb/devices/*/idVendor; do
+    [[ -r $id && $(<"$id") == 1050 ]] && return 0
+  done
+  return 1
+}
+
 # Serial numbers of attached keys, or a diagnosis of why there are none.
 require_key() {
   local out
@@ -145,6 +156,20 @@ cmd=${1:-info}
 require_ykman
 
 case "$cmd" in
+# Exit status only: menu rows use this as a `when` guard.
+present)
+  key_present
+  exit $?
+  ;;
+
+status)
+  if key_present; then
+    notify "$(ykman list 2>/dev/null | head -n1 || echo "YubiKey connected")"
+  else
+    notify "No YubiKey detected — plug one in"
+  fi
+  ;;
+
 info)
   terminal 'ykman info'
   ;;
@@ -227,7 +252,7 @@ authenticator)
   ;;
 
 *)
-  echo "Usage: yubikey-menu <info|code [account]|type [account]|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
+  echo "Usage: yubikey-menu <present|status|info|code [account]|type [account]|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
   exit 1
   ;;
 esac
