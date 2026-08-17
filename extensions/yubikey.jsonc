@@ -1,3 +1,4 @@
+  // notifications and draws its own pickers with omarchy-menu-select.
   // ── YubiKey ────────────────────────────────────────────────────────────────
   // Actions run through ~/.local/bin/yubikey-menu. Anything needing a PIN or a
   // long readout opens a floating terminal; the rest notifies.
@@ -5,18 +6,18 @@
   "yubikey.absent": {"icon":"󰀦","label":"No YubiKey Detected","description":"Plug in your key to generate codes","when":"! yubikey-menu present","action":"yubikey-menu status"},
   "yubikey.code": {"icon":"󰆏","label":"2FA Code","aliases":["otp","totp"],"description":"Copy a code to the clipboard — type to search, accounts matching the focused window come first","action":"yubikey-menu code","when":"yubikey-menu present"},
   "yubikey.type": {"icon":"󰌌","label":"Type 2FA Code","aliases":["type","autotype"],"description":"Type the code into the field you were looking at, never touching the clipboard","when":"omarchy-cmd-present wtype && yubikey-menu present","action":"yubikey-menu type"},
-  "yubikey.info": {"icon":"󰇅","label":"Key Info","description":"Serial, firmware, and enabled applications","action":"yubikey-menu info"},
-  "yubikey.add": {"icon":"󰷝","label":"Add Account","aliases":["add","enroll"],"description":"Put a new 2FA account on the key","when":"yubikey-menu present"},
+  "yubikey.info": {"icon":"󰋼","label":"Key Info","description":"Serial, firmware, and enabled applications","action":"yubikey-menu info"},
+  "yubikey.add": {"icon":"󰀔","label":"Add Account","aliases":["add","enroll"],"description":"Put a new 2FA account on the key","when":"yubikey-menu present"},
   "yubikey.add.qr": {"icon":"󰐲","label":"Scan QR Code","description":"Select the setup QR on screen","action":"yubikey-menu add"},
   "yubikey.add.manual": {"icon":"󰐕","label":"Enter Secret","description":"Type the setup key into a terminal","action":"yubikey-menu add-manual"},
-  "yubikey.accounts": {"icon":"󰍜","label":"OATH Accounts","action":"yubikey-menu accounts","when":"yubikey-menu present"},
-  "yubikey.authenticator": {"icon":"󰢁","label":"Authenticator","when":"[[ -x /opt/yubico-authenticator/authenticator ]]","action":"yubikey-menu authenticator"},
+  "yubikey.accounts": {"icon":"󰉹","label":"OATH Accounts","action":"yubikey-menu accounts","when":"yubikey-menu present"},
+  "yubikey.authenticator": {"icon":"󰥎","label":"Authenticator","when":"[[ -x /opt/yubico-authenticator/authenticator ]]","action":"yubikey-menu authenticator"},
   "yubikey.applications": {"icon":"󰐱","label":"Applications","title":"YubiKey Applications","when":"yubikey-menu present"},
-  "yubikey.applications.piv": {"icon":"󰢁","label":"PIV","description":"Smart card certificates and keys","action":"yubikey-menu piv"},
+  "yubikey.applications.piv": {"icon":"󰗒","label":"PIV","description":"Smart card certificates and keys","action":"yubikey-menu piv"},
   "yubikey.applications.fido": {"icon":"󰈷","label":"FIDO2","action":"yubikey-menu fido"},
-  "yubikey.applications.credentials": {"icon":"󰍜","label":"Passkeys","description":"Discoverable FIDO2 credentials on the key","action":"yubikey-menu credentials"},
-  "yubikey.applications.openpgp": {"icon":"󰟵","label":"OpenPGP","action":"yubikey-menu openpgp"},
-  "yubikey.applications.otp": {"icon":"󰔫","label":"OTP Slots","action":"yubikey-menu otp"},
+  "yubikey.applications.credentials": {"icon":"󱕴","label":"Passkeys","description":"Discoverable FIDO2 credentials on the key","action":"yubikey-menu credentials"},
+  "yubikey.applications.openpgp": {"icon":"󰌾","label":"OpenPGP","action":"yubikey-menu openpgp"},
+  "yubikey.applications.otp": {"icon":"󰔡","label":"OTP Slots","action":"yubikey-menu otp"},
   "yubikey.login": {"icon":"󰈷","label":"Login With Key","description":"Set up FIDO2 unlock for this machine","action":"omarchy-launch-floating-terminal-with-presentation omarchy-setup-security-fido2"},
   "yubikey.fix": {"icon":"󰑓","label":"Troubleshoot"},
   "yubikey.fix.smartcard": {"icon":"󰄬","label":"Enable Smart Card Daemon","description":"OATH, PIV, and OpenPGP need pcscd running","when":"! systemctl is-active --quiet pcscd.socket","action":"yubikey-menu smartcard"},
