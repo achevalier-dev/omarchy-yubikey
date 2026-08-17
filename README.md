@@ -45,12 +45,14 @@ omarchy menu summon yubikey
   protected. Type in the picker to search — it matches the account name and the
   subtext alike.
 - **Type 2FA Code** — the same, but typed straight into the field you were
-  looking at with `wtype`, so the code never touches the clipboard at all.
+  looking at with `wtype`, so the code never touches the clipboard at all. It is
+  piped to `wtype` on stdin rather than passed as an argument.
 - **Add Account** — scan the setup QR straight off the screen, or type the
-  secret into a terminal. The secret reaches `ykman` on stdin, never as an
-  argument, so it stays out of the process list and out of shell history — and
-  the decoded QR is wiped from the clipboard afterwards, since that value *is*
-  the secret.
+  secret into a terminal. Either way the secret reaches `ykman` on stdin, never
+  as an argument, so it stays out of the process list and out of shell history.
+  Manual entry reads the secret with echo off, because `ykman`'s own prompt
+  echoes it. The decoded QR is restored off the clipboard however the scan ends,
+  including on failure, since that value *is* the secret.
 - **Key Info** — serial, firmware, and which applications are enabled
 - **OATH Accounts** — what is stored on the key
 - **Authenticator** — launches Yubico Authenticator, or focuses it if it is
@@ -125,6 +127,14 @@ Matching only ever **reorders** the list. Nothing is picked or typed for you,
 and every account stays reachable — a wrong guess costs you a keystroke, never
 a wrong credential. This machine's own hostname and username are ignored so a
 terminal window does not produce phantom matches.
+
+## What is never recorded
+
+Codes are kept out of anything that persists. A copied code goes to the
+clipboard with `wl-copy --sensitive` and clears after 30 seconds; the
+notification says *that* a code was copied, never the code itself, because
+Omarchy keeps the last ten notification bodies on disk as plaintext. Nothing
+here writes a code or a secret to a file, a log, or a command line.
 
 ## How it works
 

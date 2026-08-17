@@ -19,7 +19,7 @@ ln -sf "$REPO/bin/$SCRIPT" "$BIN_DIR/$SCRIPT"
 echo "linked $BIN_DIR/$SCRIPT -> $REPO/bin/$SCRIPT"
 
 mkdir -p "$(dirname "$MENU")"
-[[ -f $MENU ]] || printf '{\n}\n' >"$MENU"
+[[ -s $MENU ]] || printf '{\n}\n' >"$MENU"
 cp "$MENU" "$MENU.bak.$(date +%s)"
 
 python3 - "$REPO/extensions/yubikey.jsonc" "$MENU" "$NAME" <<'PY'
@@ -37,6 +37,11 @@ if begin in text and end in text:
     text = re.sub(re.escape(begin) + r".*?" + re.escape(end) + r"\n?", lambda m: block, text, flags=re.S)
 else:
     cut = text.rstrip().rfind("}")
+    if cut < 0:
+        raise SystemExit(f"{target} is not a JSON object; refusing to edit it")
+    # Keep whatever follows the closing brace — a trailing comment there is the
+    # user's, and dropping it would be editing config we were not asked to.
+    tail = text[cut:]
     head = text.rstrip()[:cut].rstrip()
     # JSONC tolerates a trailing comma but not a missing one. The comma belongs
     # on the last entry, which is not the last line when a block ends in a
@@ -50,7 +55,9 @@ else:
             lines[i] = lines[i].rstrip() + ","
         break
     head = "\n".join(lines)
-    text = head + "\n" + block + "}\n"
+    text = head + "\n" + block + tail
+    if not text.endswith("\n"):
+        text += "\n"
 
 target.write_text(text)
 PY

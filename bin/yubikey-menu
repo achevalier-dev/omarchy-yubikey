@@ -231,19 +231,27 @@ add)
   require_key
   command -v omarchy-capture-qr >/dev/null || fail "omarchy-capture-qr is not available"
 
-  local_before=$(wl-paste --no-newline 2>/dev/null || true)
+  clipboard_before=$(wl-paste --no-newline 2>/dev/null || true)
+  scanned=""
+  restore_clipboard() {
+    [[ -n $scanned ]] || return 0
+    [[ $(wl-paste --no-newline 2>/dev/null || true) == "$scanned" ]] || return 0
+    if [[ -n $clipboard_before ]]; then
+      printf '%s' "$clipboard_before" | wl-copy --sensitive
+    else
+      wl-copy --clear
+    fi
+  }
+  # The decoded QR is the secret itself, so it goes back however this ends.
+  trap restore_clipboard EXIT
+
   notify "Select the QR code on screen"
   omarchy-capture-qr >/dev/null 2>&1 || exit 0
 
   scanned=$(wl-paste --no-newline 2>/dev/null || true)
-  [[ -n $scanned && $scanned != "$local_before" ]] || fail "No QR code was captured"
+  [[ -n $scanned && $scanned != "$clipboard_before" ]] || fail "No QR code was captured"
 
   add_from_uri "$scanned"
-
-  # The setup URI is the secret. Put the clipboard back rather than leaving it.
-  if [[ $(wl-paste --no-newline 2>/dev/null || true) == "$scanned" ]]; then
-    if [[ -n $local_before ]]; then printf '%s' "$local_before" | wl-copy; else wl-copy --clear; fi
-  fi
   ;;
 
 # Manual entry: the name is not secret and can come from a prompt, the secret
@@ -252,7 +260,7 @@ add-manual)
   require_key
   name=$(omarchy-menu-input "Account name, such as GitHub:you@example.com") || exit 0
   [[ -n $name ]] || exit 0
-  terminal "ykman oath accounts add $(printf '%q' "$name")"
+  terminal "read -rsp 'Base32 secret: ' secret && echo && printf '%s' \"\$secret\" | ykman oath accounts add -f $(printf '%q' "$name")"
   ;;
 
 code)
@@ -261,7 +269,7 @@ code)
   code=${result%%$'\t'*}
   account=${result##*$'\t'}
 
-  printf '%s' "$code" | wl-copy
+  printf '%s' "$code" | wl-copy --sensitive
 
   # A one-time code has no business outliving its use.
   (
@@ -269,7 +277,9 @@ code)
     [[ $(wl-paste --no-newline 2>/dev/null) == "$code" ]] && wl-copy --clear
   ) >/dev/null 2>&1 &
 
-  notify "$code copied for $account — clears in ${CLIPBOARD_TIMEOUT}s"
+  # The code never goes in the notification body — Omarchy keeps the last ten
+  # notifications on disk as plaintext, and notify-send argv is world-readable.
+  notify "Code copied for $account — clears in ${CLIPBOARD_TIMEOUT}s"
   ;;
 
 # Types the code straight into the field you were looking at, so it never
@@ -291,7 +301,7 @@ type)
     sleep 0.25
   fi
 
-  wtype -- "$code" || fail "Could not type the code for $account"
+  printf '%s' "$code" | wtype - || fail "Could not type the code for $account"
   notify "Typed a code for $account"
   ;;
 
