@@ -70,14 +70,15 @@ Panel {
   }
 
   // omarchy renders this glyph itself, so the font is guaranteed to have it.
-  readonly property string glyph: present ? "󰌆" : "󰅙"
+  readonly property string glyph: present ? "󰌆" : "󰀦"
 
   // Rows under the account list, in the shape the first-party panels use: a
   // label that hands off to the terminal or the menu.
-  readonly property var actionKeys: ["info", "applications", "troubleshoot"]
+  readonly property var actionKeys: ["add", "info", "applications", "troubleshoot"]
 
   function labelFor(key) {
     switch (key) {
+    case "add": return "Add account…"
     case "info": return "Key info"
     case "applications": return "Applications…"
     case "troubleshoot": return "Troubleshoot…"
@@ -88,7 +89,8 @@ Panel {
   function runAction(key) {
     close()
     if (!bar) return
-    if (key === "info") bar.run("yubikey-menu info")
+    if (key === "add") bar.run("yubikey-menu add")
+    else if (key === "info") bar.run("yubikey-menu info")
     else if (key === "applications") bar.run("omarchy-menu summon yubikey.applications")
     else if (key === "troubleshoot") bar.run("omarchy-menu summon yubikey.fix")
   }
@@ -162,13 +164,16 @@ Panel {
   // can answer "is it plugged in" without waking ykman.
   Process {
     id: presenceProc
+    property bool found: false
     command: ["bash", "-lc",
       "for id in /sys/bus/usb/devices/*/idVendor; do [[ $(<\"$id\") == 1050 ]] || continue; printf '%s\\n' \"$(<\"$(dirname \"$id\")/product\")\"; exit 0; done"]
     running: true
+    onRunningChanged: if (running) presenceProc.found = false
     stdout: SplitParser {
       onRead: function (data) {
         var name = String(data).trim()
         if (!name) return
+        presenceProc.found = true
         root.product = name
         if (!root.present) {
           root.present = true
@@ -177,8 +182,13 @@ Panel {
       }
     }
     onExited: function (code) {
-      // No line on stdout means no Yubico device on the bus.
-      if (root.product === "" || code !== 0) root.present = false
+      // No line on stdout during *this* run means no Yubico device on the bus.
+      root.present = presenceProc.found
+      if (!presenceProc.found) {
+        root.product = ""
+        root.accounts = []
+        root.serial = ""
+      }
     }
   }
 
@@ -190,7 +200,6 @@ Panel {
     stdout: SplitParser {
       onRead: function (data) {
         if (String(data).indexOf("usb") < 0) return
-        root.product = ""
         recheck.restart()
       }
     }
@@ -214,10 +223,7 @@ Panel {
     interval: 30000
     running: true
     repeat: true
-    onTriggered: {
-      root.product = ""
-      if (!presenceProc.running) presenceProc.running = true
-    }
+    onTriggered: if (!presenceProc.running) presenceProc.running = true
   }
 
   // ── Accounts ────────────────────────────────────────────────────────────────

@@ -2,10 +2,13 @@
   // Actions run through ~/.local/bin/yubikey-menu. Anything needing a PIN or a
   // long readout opens a floating terminal; the rest notifies.
   "yubikey": {"icon":"󰌆","label":"YubiKey","aliases":["yubi","2fa"],"description":"YubiKey codes, applications, and repair","when":"omarchy-cmd-present ykman","checked":"yubikey-menu present"},
-  "yubikey.absent": {"icon":"󰅙","label":"No YubiKey Detected","description":"Plug in your key to generate codes","when":"! yubikey-menu present","action":"yubikey-menu status"},
-  "yubikey.code": {"icon":"󰆏","label":"2FA Code","aliases":["otp","totp"],"description":"Copy a code to the clipboard — accounts matching the focused window come first","action":"yubikey-menu code","when":"yubikey-menu present"},
+  "yubikey.absent": {"icon":"󰀦","label":"No YubiKey Detected","description":"Plug in your key to generate codes","when":"! yubikey-menu present","action":"yubikey-menu status"},
+  "yubikey.code": {"icon":"󰆏","label":"2FA Code","aliases":["otp","totp"],"description":"Copy a code to the clipboard — type to search, accounts matching the focused window come first","action":"yubikey-menu code","when":"yubikey-menu present"},
   "yubikey.type": {"icon":"󰌌","label":"Type 2FA Code","aliases":["type","autotype"],"description":"Type the code into the field you were looking at, never touching the clipboard","when":"omarchy-cmd-present wtype && yubikey-menu present","action":"yubikey-menu type"},
   "yubikey.info": {"icon":"󰇅","label":"Key Info","description":"Serial, firmware, and enabled applications","action":"yubikey-menu info"},
+  "yubikey.add": {"icon":"󰷝","label":"Add Account","aliases":["add","enroll"],"description":"Put a new 2FA account on the key","when":"yubikey-menu present"},
+  "yubikey.add.qr": {"icon":"󰐲","label":"Scan QR Code","description":"Select the setup QR on screen","action":"yubikey-menu add"},
+  "yubikey.add.manual": {"icon":"󰐕","label":"Enter Secret","description":"Type the setup key into a terminal","action":"yubikey-menu add-manual"},
   "yubikey.accounts": {"icon":"󰍜","label":"OATH Accounts","action":"yubikey-menu accounts","when":"yubikey-menu present"},
   "yubikey.authenticator": {"icon":"󰢁","label":"Authenticator","when":"[[ -x /opt/yubico-authenticator/authenticator ]]","action":"yubikey-menu authenticator"},
   "yubikey.applications": {"icon":"󰐱","label":"Applications","title":"YubiKey Applications","when":"yubikey-menu present"},

@@ -59,6 +59,56 @@ pick() { # $1: rows, $2: prompt
 label_of() { printf '%s' "${1%%$'\t'*}"; }
 
 
+# ── Adding accounts ──────────────────────────────────────────────────────────
+# The secret goes to ykman on stdin, never as an argument, so it stays out of
+# the process list and out of shell history.
+
+urldecode() { printf '%b' "${1//%/\\x}"; }
+
+# Reads one field out of an otpauth:// query string.
+uri_param() { # $1: uri, $2: key
+  local rest=${1#*\?}
+  local pair
+  while IFS= read -r pair; do
+    [[ ${pair%%=*} == "$2" ]] || continue
+    urldecode "${pair#*=}"
+    return 0
+  done < <(tr '&' '\n' <<<"$rest")
+  return 1
+}
+
+add_from_uri() { # $1: otpauth:// URI
+  local uri=$1
+  [[ $uri == otpauth://* ]] || fail "That is not an otpauth:// setup code"
+
+  local kind label secret issuer digits period algorithm
+  kind=${uri#otpauth://}
+  kind=${kind%%/*}
+  label=${uri#otpauth://*/}
+  label=${label%%\?*}
+  label=$(urldecode "$label")
+
+  secret=$(uri_param "$uri" secret) || fail "That setup code carries no secret"
+  issuer=$(uri_param "$uri" issuer || true)
+  digits=$(uri_param "$uri" digits || true)
+  period=$(uri_param "$uri" period || true)
+  algorithm=$(uri_param "$uri" algorithm || true)
+
+  local args=(oath accounts add)
+  [[ $kind == hotp ]] && args+=(--oath-type hotp)
+  [[ -n ${issuer:-} && $label != *:* ]] && args+=(--issuer "$issuer")
+  [[ -n ${digits:-} ]] && args+=(--digits "$digits")
+  [[ -n ${period:-} ]] && args+=(--period "$period")
+  [[ -n ${algorithm:-} ]] && args+=(--algorithm "$(tr '[:upper:]' '[:lower:]' <<<"$algorithm")")
+  args+=(-f "$label")
+
+  local output
+  if ! output=$(printf '%s' "$secret" | timeout 30 ykman "${args[@]}" 2>&1); then
+    fail "Could not add $label: $(head -n1 <<<"$output")"
+  fi
+  notify "Added $label to your YubiKey"
+}
+
 # ── Context matching ─────────────────────────────────────────────────────────
 # The focused window is the best hint about which account you want. Login pages
 # almost always name the service ("Sign in to GitHub · GitHub"), and native apps
@@ -137,7 +187,7 @@ pick_code() { # $1: account to use directly, or empty to draw the picker
   if [[ -n $wanted ]]; then
     account=$wanted
   else
-    selection=$(printf '%s\n' "$rows" | omarchy-menu-select "2FA code") || return 1
+    selection=$(printf '%s\n' "$rows" | omarchy-menu-select "Search accounts") || return 1
     account=$(label_of "$selection")
   fi
 
@@ -172,6 +222,37 @@ status)
 
 info)
   terminal 'ykman info'
+  ;;
+
+# Scans a 2FA setup QR off the screen. omarchy-capture-qr puts the decoded
+# value on the clipboard and nowhere else; we take it from there and clear it
+# again, because that value is the secret itself.
+add)
+  require_key
+  command -v omarchy-capture-qr >/dev/null || fail "omarchy-capture-qr is not available"
+
+  local_before=$(wl-paste --no-newline 2>/dev/null || true)
+  notify "Select the QR code on screen"
+  omarchy-capture-qr >/dev/null 2>&1 || exit 0
+
+  scanned=$(wl-paste --no-newline 2>/dev/null || true)
+  [[ -n $scanned && $scanned != "$local_before" ]] || fail "No QR code was captured"
+
+  add_from_uri "$scanned"
+
+  # The setup URI is the secret. Put the clipboard back rather than leaving it.
+  if [[ $(wl-paste --no-newline 2>/dev/null || true) == "$scanned" ]]; then
+    if [[ -n $local_before ]]; then printf '%s' "$local_before" | wl-copy; else wl-copy --clear; fi
+  fi
+  ;;
+
+# Manual entry: the name is not secret and can come from a prompt, the secret
+# is typed into a terminal where ykman hides it.
+add-manual)
+  require_key
+  name=$(omarchy-menu-input "Account name, such as GitHub:you@example.com") || exit 0
+  [[ -n $name ]] || exit 0
+  terminal "ykman oath accounts add $(printf '%q' "$name")"
   ;;
 
 code)
@@ -252,7 +333,7 @@ authenticator)
   ;;
 
 *)
-  echo "Usage: yubikey-menu <present|status|info|code [account]|type [account]|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
+  echo "Usage: yubikey-menu <present|status|info|add|add-manual|code [account]|type [account]|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
   exit 1
   ;;
 esac

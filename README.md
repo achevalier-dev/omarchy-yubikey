@@ -42,9 +42,15 @@ omarchy menu summon yubikey
 - **2FA Code** — pick an OATH account, get the code on your clipboard, and it
   clears itself 30 seconds later. Prompts you to touch the key when the account
   requires it, and falls back to a terminal if the OATH application is password
-  protected.
+  protected. Type in the picker to search — it matches the account name and the
+  subtext alike.
 - **Type 2FA Code** — the same, but typed straight into the field you were
   looking at with `wtype`, so the code never touches the clipboard at all.
+- **Add Account** — scan the setup QR straight off the screen, or type the
+  secret into a terminal. The secret reaches `ykman` on stdin, never as an
+  argument, so it stays out of the process list and out of shell history — and
+  the decoded QR is wiped from the clipboard afterwards, since that value *is*
+  the secret.
 - **Key Info** — serial, firmware, and which applications are enabled
 - **OATH Accounts** — what is stored on the key
 - **Authenticator** — launches Yubico Authenticator, or focuses it if it is
