@@ -115,7 +115,9 @@ gpgconf --kill scdaemon gpg-agent
 
 ## Speed
 
-The picker draws in about a quarter of a second. Presence is read from sysfs
+The picker draws about half a second after the menu row is chosen, and most of
+what remains is not this plugin: Omarchy runs menu actions through a login
+shell, and summoning and drawing the picker costs its own fifth of a second. Presence is read from sysfs
 rather than by asking `ykman` (8ms against 1.3s), and the account list is served
 from a cache in `$XDG_CACHE_HOME/yubikey-menu` while the key is re-read in the
 background, so enrolling an account elsewhere still shows up. Only the code

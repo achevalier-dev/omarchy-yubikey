@@ -154,42 +154,59 @@ add_from_uri() { # $1: otpauth:// URI
 
 STOPWORDS=" com www net org co uk io app the and for your new tab page home sign login log account accounts secure security verify verification two factor authentication authenticator browser brave chrome chromium firefox mozilla zen window private "
 
-# Lowercased words from the focused window, minus browser chrome and noise.
-context_tokens() {
-  local window class title text
-  window=$(hyprctl activewindow -j 2>/dev/null) || return 0
-  class=$(jq -r '.class // ""' <<<"$window")
-  title=$(jq -r '.title // ""' <<<"$window")
+# The focused window, read once. Every signal below comes out of this one
+# hyprctl call — three separate ones cost more than everything else here.
+WINDOW_CLASS=""
+WINDOW_TEXT=""
+read_window() {
+  [[ -z $WINDOW_TEXT ]] || return 0
+  # One hyprctl and one jq for all three signals below.
+  local line
+  line=$(hyprctl activewindow -j 2>/dev/null |
+    jq -r '((.class // "") + "\t" + ((.class // "") + " " + (.title // ""))) | ascii_downcase' 2>/dev/null)
+  WINDOW_CLASS=${line%%$'\t'*}
+  WINDOW_TEXT=${line#*$'\t'}
+  [[ -n $WINDOW_TEXT ]] || WINDOW_TEXT=" "
+}
 
-  text=$(tr '[:upper:]' '[:lower:]' <<<"$class $title")
-  tr -cs '[:alnum:]' '\n' <<<"$text" |
+# Lowercased words from the focused window, minus browser chrome and noise.
+CONTEXT_TOKENS=""
+context_tokens() {
+  if [[ -z $CONTEXT_TOKENS ]]; then
+    local text own_host own_user word out=""
+    read_window
+    text=$WINDOW_TEXT
+    # Hoisted: these were being recomputed for every single word.
+    own_host=${HOSTNAME:-$(hostname 2>/dev/null)}
+    own_host=${own_host,,}
+    own_user=${USER:-$(id -un)}
+    own_user=${own_user,,}
+
     while IFS= read -r word; do
       ((${#word} >= 3)) || continue
       [[ $STOPWORDS == *" $word "* ]] && continue
-      # This machine's own name is in every terminal title; it says nothing
-      # about which account you want.
-      [[ $word == "$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]')" ]] && continue
-      [[ $word == "$(id -un | tr '[:upper:]' '[:lower:]')" ]] && continue
-      printf '%s\n' "$word"
-    done | sort -u
+      [[ $word == "$own_host" || $word == "$own_user" ]] && continue
+      out+="$word"$'\n'
+    done < <(tr -cs '[:alnum:]' '\n' <<<"$text" | sort -u)
+    CONTEXT_TOKENS=$out
+  fi
+  printf '%s' "$CONTEXT_TOKENS"
 }
 
 # Addresses shown in the focused window — a Google or AWS sign-in page names
 # the account you are signing into, which is the difference between three
 # identical-looking entries.
 context_emails() {
-  hyprctl activewindow -j 2>/dev/null |
-    jq -r '(.title // "") + " " + (.class // "")' |
-    grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' |
-    tr '[:upper:]' '[:lower:]' | sort -u
+  read_window
+  grep -oE '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}' <<<"$WINDOW_TEXT" | sort -u
 }
 
 # A stable key for "what am I looking at", used to remember the choice.
 context_key() {
-  local class token
-  class=$(hyprctl activewindow -j 2>/dev/null | jq -r '.class // ""')
+  local token
+  read_window
   token=$(context_tokens | head -n1)
-  printf '%s/%s' "${class:-none}" "${token:-none}"
+  printf '%s/%s' "${WINDOW_CLASS:-none}" "${token:-none}"
 }
 
 # Prints "score<TAB>account" for each account on stdin.
