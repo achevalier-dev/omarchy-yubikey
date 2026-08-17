@@ -113,6 +113,14 @@ echo disable-ccid >> ~/.gnupg/scdaemon.conf
 gpgconf --kill scdaemon gpg-agent
 ```
 
+## Speed
+
+The picker draws in about a quarter of a second. Presence is read from sysfs
+rather than by asking `ykman` (8ms against 1.3s), and the account list is served
+from a cache in `$XDG_CACHE_HOME/yubikey-menu` while the key is re-read in the
+background, so enrolling an account elsewhere still shows up. Only the code
+itself waits on the key.
+
 ## Service detection
 
 Both code actions read the focused window first — `hyprctl activewindow` gives
@@ -122,6 +130,13 @@ GitHub" → `Github:…`, "Log in | MongoDB Cloud" → `auth.mongodb.com:…`), 
 native apps name it in their window class. Domains inside an account name are
 matched too, which covers the entries an authenticator app wrote as raw
 hostnames.
+
+Three signals feed the ranking: words from the window, any email address
+visible in it — a Google or AWS sign-in page names the account you are signing
+into, which is what separates three otherwise identical entries — and which
+account you chose last time you were on this same page, remembered in
+`$XDG_STATE_HOME/yubikey-menu/choices`. The memory only breaks ties between
+accounts that already match; it never invents one.
 
 Matching only ever **reorders** the list. Nothing is picked or typed for you,
 and every account stays reachable — a wrong guess costs you a keystroke, never

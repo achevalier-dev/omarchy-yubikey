@@ -34,20 +34,52 @@ key_present() {
   return 1
 }
 
-# Serial numbers of attached keys, or a diagnosis of why there are none.
+# Presence comes from sysfs in about eight milliseconds; `ykman list` needs a
+# second and a third of it, which is a long time to stare at nothing.
 require_key() {
-  local out
-  out=$(timeout 15 ykman list --serials 2>&1)
-
-  if grep -qE '^[0-9]+$' <<<"$out"; then
-    return 0
-  fi
-
-  if grep -q 'PC/SC not available' <<<"$out"; then
+  key_present && return 0
+  systemctl is-active --quiet pcscd.socket ||
     fail "Smart card daemon is not running — enable it from the YubiKey menu"
-  fi
-
   fail "No YubiKey detected — insert your key and try again"
+}
+
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/yubikey-menu"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/yubikey-menu"
+
+# The account list changes when you enrol something, which is rare, so the
+# picker draws from a cache and the key is asked again in the background.
+refresh_cache() {
+  local list serial
+  list=$(timeout 20 ykman oath accounts list 2>/dev/null) || return 1
+  [[ -n $list ]] || return 1
+  mkdir -p "$CACHE_DIR"
+  printf '%s\n' "$list" >"$CACHE_DIR/accounts.tmp" && mv "$CACHE_DIR/accounts.tmp" "$CACHE_DIR/accounts"
+  serial=$(timeout 20 ykman list --serials 2>/dev/null | head -n1) &&
+    [[ -n $serial ]] && printf '%s\n' "$serial" >"$CACHE_DIR/serial"
+  return 0
+}
+
+refresh_cache_detached() { (refresh_cache >/dev/null 2>&1 &) ; }
+
+# Which account you picked last time you were looking at this, so three
+# accounts from the same provider do not all look equally likely.
+remember_choice() { # $1: context key, $2: account
+  [[ -n $1 && -n $2 ]] || return 0
+  mkdir -p "$STATE_DIR"
+  local file="$STATE_DIR/choices" tmp
+  tmp=$(mktemp)
+  {
+    printf '%s\t%s\n' "$1" "$2"
+    [[ -r $file ]] && grep -vF "$(printf '%s\t' "$1")" "$file" | head -n 200
+  } >"$tmp" 2>/dev/null
+  mv "$tmp" "$file"
+  chmod 600 "$file"
+}
+
+recall_choice() { # $1: context key
+  local file="$STATE_DIR/choices"
+  [[ -n $1 && -r $file ]] || return 1
+  awk -F'\t' -v key="$1" '$1 == key { print $2; exit }' "$file"
 }
 
 pick() { # $1: rows, $2: prompt
@@ -94,6 +126,10 @@ add_from_uri() { # $1: otpauth:// URI
   period=$(uri_param "$uri" period || true)
   algorithm=$(uri_param "$uri" algorithm || true)
 
+  if timeout 20 ykman oath accounts list 2>/dev/null | grep -qxF "$label"; then
+    fail "$label is already on this key — remove it first if you mean to replace it"
+  fi
+
   local args=(oath accounts add)
   [[ $kind == hotp ]] && args+=(--oath-type hotp)
   [[ -n ${issuer:-} && $label != *:* ]] && args+=(--issuer "$issuer")
@@ -106,6 +142,7 @@ add_from_uri() { # $1: otpauth:// URI
   if ! output=$(printf '%s' "$secret" | timeout 30 ykman "${args[@]}" 2>&1); then
     fail "Could not add $label: $(head -n1 <<<"$output")"
   fi
+  refresh_cache >/dev/null 2>&1 || true
   notify "Added $label to your YubiKey"
 }
 
@@ -115,7 +152,7 @@ add_from_uri() { # $1: otpauth:// URI
 # name it in the window class. Matches are floated to the top of the picker and
 # nothing is ever picked for you.
 
-STOPWORDS=" com www net org co uk io app the and for your new tab page home sign login log account accounts secure security verify verification two factor authentication authenticator browser brave chrome chromium firefox mozilla zen google window private "
+STOPWORDS=" com www net org co uk io app the and for your new tab page home sign login log account accounts secure security verify verification two factor authentication authenticator browser brave chrome chromium firefox mozilla zen window private "
 
 # Lowercased words from the focused window, minus browser chrome and noise.
 context_tokens() {
@@ -137,20 +174,46 @@ context_tokens() {
     done | sort -u
 }
 
+# Addresses shown in the focused window — a Google or AWS sign-in page names
+# the account you are signing into, which is the difference between three
+# identical-looking entries.
+context_emails() {
+  hyprctl activewindow -j 2>/dev/null |
+    jq -r '(.title // "") + " " + (.class // "")' |
+    grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' |
+    tr '[:upper:]' '[:lower:]' | sort -u
+}
+
+# A stable key for "what am I looking at", used to remember the choice.
+context_key() {
+  local class token
+  class=$(hyprctl activewindow -j 2>/dev/null | jq -r '.class // ""')
+  token=$(context_tokens | head -n1)
+  printf '%s/%s' "${class:-none}" "${token:-none}"
+}
+
 # Prints "score<TAB>account" for each account on stdin.
 rank_accounts() {
-  local -a tokens=()
+  local -a tokens=() emails=()
   mapfile -t tokens < <(context_tokens)
+  mapfile -t emails < <(context_emails)
+  local remembered
+  remembered=$(recall_choice "$(context_key)" || true)
 
-  local account lower score token
+  local account lower score token email
   while IFS= read -r account; do
     [[ -n $account ]] || continue
-    lower=$(tr '[:upper:]' '[:lower:]' <<<"$account")
+    lower=${account,,}
     score=0
     for token in "${tokens[@]}"; do
       [[ -n $token && $lower == *"$token"* ]] || continue
       ((score += ${#token} >= 5 ? 60 : 30))
     done
+    for email in "${emails[@]}"; do
+      [[ -n $email && $lower == *"$email"* ]] && ((score += 150))
+    done
+    # Only a tiebreak: it lifts one of several matches, it does not invent one.
+    [[ -n $remembered && $account == "$remembered" && $score -gt 0 ]] && ((score += 100))
     printf '%s\t%s\n' "$score" "$account"
   done
 }
@@ -164,7 +227,13 @@ context_label() {
 pick_code() { # $1: account to use directly, or empty to draw the picker
   local wanted=${1:-}
   local accounts rows label
-  if ! accounts=$(timeout 20 ykman oath accounts list 2>&1); then
+
+  # A cached list draws the picker immediately; the key is re-read afterwards
+  # so an account enrolled elsewhere shows up next time.
+  if [[ -z $wanted && -s "$CACHE_DIR/accounts" ]]; then
+    accounts=$(<"$CACHE_DIR/accounts")
+    refresh_cache_detached
+  elif ! accounts=$(timeout 20 ykman oath accounts list 2>&1); then
     if grep -qi 'password' <<<"$accounts"; then
       notify "OATH is password protected — unlock it in the terminal"
       terminal 'ykman oath accounts code'
@@ -173,6 +242,7 @@ pick_code() { # $1: account to use directly, or empty to draw the picker
     fail "Could not read OATH accounts: $(head -n1 <<<"$accounts")"
   fi
   [[ -n $accounts ]] || fail "This YubiKey has no OATH accounts stored"
+  [[ -s "$CACHE_DIR/accounts" ]] || refresh_cache_detached
 
   label=$(context_label)
   rows=$(rank_accounts <<<"$accounts" | sort -s -rn -k1,1 | while IFS=$'\t' read -r score account; do
@@ -191,6 +261,7 @@ pick_code() { # $1: account to use directly, or empty to draw the picker
     account=$(label_of "$selection")
   fi
 
+  [[ -n $wanted ]] || remember_choice "$(context_key)" "$account"
   notify "Fetching a code for $account — touch your key if it blinks"
 
   local code
@@ -210,6 +281,12 @@ case "$cmd" in
 present)
   key_present
   exit $?
+  ;;
+
+# Used by the bar widget after it draws from the cache.
+refresh-cache)
+  require_key
+  refresh_cache || fail "Could not read the accounts on this key"
   ;;
 
 status)
@@ -343,7 +420,7 @@ authenticator)
   ;;
 
 *)
-  echo "Usage: yubikey-menu <present|status|info|add|add-manual|code [account]|type [account]|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
+  echo "Usage: yubikey-menu <present|status|refresh-cache|info|add|add-manual|code [account]|type [account]|accounts|piv|fido|credentials|openpgp|otp|reset-gpg|smartcard|authenticator>" >&2
   exit 1
   ;;
 esac
