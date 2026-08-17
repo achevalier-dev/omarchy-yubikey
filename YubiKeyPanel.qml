@@ -166,7 +166,7 @@ Panel {
     id: presenceProc
     property bool found: false
     command: ["bash", "-lc",
-      "for id in /sys/bus/usb/devices/*/idVendor; do [[ $(<\"$id\") == 1050 ]] || continue; printf '%s\\n' \"$(<\"$(dirname \"$id\")/product\")\"; exit 0; done"]
+      "shopt -s nullglob; for id in /sys/bus/usb/devices/*/idVendor; do [[ $(<\"$id\") == 1050 ]] || continue; printf '%s\\n' \"$(<\"$(dirname \"$id\")/product\")\"; exit 0; done"]
     running: true
     onRunningChanged: if (running) presenceProc.found = false
     stdout: SplitParser {
@@ -230,7 +230,15 @@ Panel {
   Process {
     id: accountsProc
     property string collected: ""
-    command: ["bash", "-lc", "ykman oath accounts list 2>/dev/null; ykman list --serials 2>/dev/null | head -n1"]
+    // The cache answers instantly; ykman is asked again in the background so an
+    // account enrolled elsewhere appears next time. Plain `bash -c`, not `-lc`:
+    // nothing here needs the user's profile, and sourcing it costs more than
+    // the work does.
+    command: ["bash", "-c",
+      "cache=\"${XDG_CACHE_HOME:-$HOME/.cache}/yubikey-menu\"; "
+      + "if [[ -s $cache/accounts ]]; then cat \"$cache/accounts\"; cat \"$cache/serial\" 2>/dev/null; "
+      + "(yubikey-menu refresh-cache >/dev/null 2>&1 &); "
+      + "else ykman oath accounts list 2>/dev/null; ykman list --serials 2>/dev/null | head -n1; fi"]
     stdout: SplitParser {
       onRead: function (data) { accountsProc.collected += String(data) + "\n" }
     }
@@ -249,7 +257,7 @@ Panel {
   Process {
     id: contextProc
     property string collected: ""
-    command: ["bash", "-lc", "hyprctl activewindow -j 2>/dev/null | jq -r '(.class // \"\") + \" \" + (.title // \"\")'; hostname; id -un"]
+    command: ["bash", "-c", "hyprctl activewindow -j 2>/dev/null | jq -r '(.class // \"\") + \" \" + (.title // \"\")'; hostname; id -un"]
     stdout: SplitParser {
       onRead: function (data) { contextProc.collected += String(data) + "\n" }
     }

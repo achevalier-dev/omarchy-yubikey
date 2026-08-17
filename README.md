@@ -113,6 +113,19 @@ echo disable-ccid >> ~/.gnupg/scdaemon.conf
 gpgconf --kill scdaemon gpg-agent
 ```
 
+## Fastest path
+
+Bind the panel to a key and skip the menu entirely:
+
+```bash
+o.bind("SUPER + SHIFT + Y", "YubiKey codes", "omarchy-shell io.github.achevalier-dev.yubikey toggle")
+```
+
+The panel lives inside `omarchy-shell`, so it opens in about **70ms** with the
+accounts already listed. The same list reached through a menu row costs ~0.5s,
+because Omarchy dispatches menu actions through a login shell and then summons
+and draws the picker.
+
 ## Speed
 
 The picker draws about half a second after the menu row is chosen, and most of
