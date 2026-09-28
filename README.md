@@ -173,6 +173,12 @@ It draws its pickers with `omarchy-menu-select`, reports through
 `omarchy-notification-send`, and opens `omarchy-launch-floating-terminal-with-presentation`
 for anything interactive. Usable on its own:
 
+If OATH password protection is enabled, choose **YubiKey → OATH Accounts** and
+enter the password in the terminal once to fill the panel's account cache.
+The password is not saved by this plugin. Generating a code asks for it in a
+terminal again when needed; the panel's background reads stop after a timeout
+instead of waiting indefinitely for terminal input.
+
 ```bash
 yubikey-menu code        # pick an account, copy the code
 yubikey-menu type        # pick an account, type the code into the focused field
