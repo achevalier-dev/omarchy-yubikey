@@ -50,8 +50,9 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/yubikey-menu"
 # picker draws from a cache and the key is asked again in the background.
 refresh_cache() {
   local list serial
-  list=$(timeout 20 ykman oath accounts list 2>/dev/null) || return 1
+  list=$(timeout 20 ykman oath accounts list </dev/null 2>/dev/null) || return 1
   [[ -n $list ]] || return 1
+  umask 077
   mkdir -p "$CACHE_DIR"
   printf '%s\n' "$list" >"$CACHE_DIR/accounts.tmp" && mv "$CACHE_DIR/accounts.tmp" "$CACHE_DIR/accounts"
   serial=$(timeout 20 ykman list --serials 2>/dev/null | head -n1) &&
@@ -247,19 +248,21 @@ pick_code() { # $1: account to use directly, or empty to draw the picker
 
   # A cached list draws the picker immediately; the key is re-read afterwards
   # so an account enrolled elsewhere shows up next time.
-  if [[ -z $wanted && -s "$CACHE_DIR/accounts" ]]; then
+  if [[ -n $wanted ]]; then
+    accounts=$wanted
+  elif [[ -s "$CACHE_DIR/accounts" ]]; then
     accounts=$(<"$CACHE_DIR/accounts")
     refresh_cache_detached
-  elif ! accounts=$(timeout 20 ykman oath accounts list 2>&1); then
+  elif ! accounts=$(timeout 10s ykman oath accounts list </dev/null 2>&1); then
     if grep -qi 'password' <<<"$accounts"; then
-      notify "OATH is password protected — unlock it in the terminal"
-      terminal 'ykman oath accounts code'
-      exit 0
+      notify "OATH password required — enter it in the terminal, then reopen the menu"
+      terminal 'yubikey-menu accounts-interactive'
+      return 1
     fi
     fail "Could not read OATH accounts: $(head -n1 <<<"$accounts")"
   fi
   [[ -n $accounts ]] || fail "This YubiKey has no OATH accounts stored"
-  [[ -s "$CACHE_DIR/accounts" ]] || refresh_cache_detached
+  [[ -n $wanted || -s "$CACHE_DIR/accounts" ]] || refresh_cache_detached
 
   label=$(context_label)
   rows=$(rank_accounts <<<"$accounts" | sort -s -rn -k1,1 | while IFS=$'\t' read -r score account; do
@@ -282,7 +285,12 @@ pick_code() { # $1: account to use directly, or empty to draw the picker
   notify "Fetching a code for $account — touch your key if it blinks"
 
   local code
-  if ! code=$(timeout 30 ykman oath accounts code --single "$account" 2>&1) || [[ -z $code ]]; then
+  if ! code=$(timeout 30s ykman oath accounts code --single "$account" </dev/null 2>&1) || [[ -z $code ]]; then
+    if grep -qi 'password' <<<"$code"; then
+      notify "OATH password required — enter it in the terminal"
+      terminal "yubikey-menu ${cmd}-interactive $(printf '%q' "$account") $(printf '%q' "${target:-}")"
+      return 1
+    fi
     fail "Could not generate a code for $account"
   fi
 
@@ -302,8 +310,8 @@ present)
 
 # Used by the bar widget after it draws from the cache.
 refresh-cache)
-  require_key
-  refresh_cache || fail "Could not read the accounts on this key"
+  key_present || exit 1
+  refresh_cache
   ;;
 
 status)
@@ -399,8 +407,44 @@ type)
   notify "Typed a code for $account"
   ;;
 
+code-interactive|type-interactive)
+  require_key
+  account=${2:-}
+  target=${3:-}
+  [[ -n $account ]] || fail "No OATH account selected"
+  code=$(ykman oath accounts code --single "$account") || fail "Could not generate a code for $account"
+  code=$(tr -d '[:space:]' <<<"$code")
+  [[ -n $code ]] || fail "No code returned for $account"
+  if [[ $cmd == type-interactive && -n $target ]] && command -v wtype >/dev/null; then
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$target\" })" >/dev/null 2>&1 ||
+      hyprctl dispatch focuswindow "address:$target" >/dev/null 2>&1
+    sleep 0.25
+    printf '%s' "$code" | wtype - || fail "Could not type the code for $account"
+    notify "Typed a code for $account"
+  else
+    printf '%s' "$code" | wl-copy --sensitive
+    (
+      sleep "$CLIPBOARD_TIMEOUT"
+      [[ $(wl-paste --no-newline 2>/dev/null) == "$code" ]] && wl-copy --clear
+    ) >/dev/null 2>&1 &
+    notify "Code copied for $account — clears in ${CLIPBOARD_TIMEOUT}s"
+  fi
+  ;;
+
 accounts)
-  terminal 'ykman oath accounts list'
+  terminal 'yubikey-menu accounts-interactive'
+  ;;
+
+accounts-interactive)
+  require_key
+  accounts=$(ykman oath accounts list) || fail "Could not read OATH accounts"
+  printf '%s\n' "$accounts"
+  if [[ -n $accounts ]]; then
+    umask 077
+    mkdir -p "$CACHE_DIR"
+    printf '%s\n' "$accounts" >"$CACHE_DIR/accounts.tmp" && mv "$CACHE_DIR/accounts.tmp" "$CACHE_DIR/accounts"
+    chmod 600 "$CACHE_DIR/accounts"
+  fi
   ;;
 
 piv)

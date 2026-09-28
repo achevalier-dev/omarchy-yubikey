@@ -20,6 +20,7 @@ Panel {
   property var contextTokens: []
   property string filter: ""
   property bool loading: false
+  property string readError: ""
   property string pendingAccount: ""
   property int secondsLeft: 30
 
@@ -66,6 +67,7 @@ Panel {
   readonly property string stateText: {
     if (!present) return "Not plugged in"
     if (loading) return "Reading key…"
+    if (readError) return readError
     return accounts.length + (accounts.length === 1 ? " account" : " accounts")
   }
 
@@ -144,6 +146,7 @@ Panel {
     }
     if (accountsProc.running) return
     root.loading = true
+    root.readError = ""
     accountsProc.collected = ""
     accountsProc.running = true
   }
@@ -238,12 +241,22 @@ Panel {
       "cache=\"${XDG_CACHE_HOME:-$HOME/.cache}/yubikey-menu\"; "
       + "if [[ -s $cache/accounts ]]; then cat \"$cache/accounts\"; cat \"$cache/serial\" 2>/dev/null; "
       + "(yubikey-menu refresh-cache >/dev/null 2>&1 &); "
-      + "else ykman oath accounts list 2>/dev/null; ykman list --serials 2>/dev/null | head -n1; fi"]
+      + "else output=$(timeout 10s ykman oath accounts list </dev/null 2>&1); result=$?; "
+      + "if (( result == 0 )); then printf '%s\\n' \"$output\"; timeout 5s ykman list --serials 2>/dev/null | head -n1; "
+      + "elif grep -qi password <<<\"$output\"; then echo '__YUBIKEY_READ_PASSWORD__'; "
+      + "else echo '__YUBIKEY_READ_FAILED__'; fi; fi"]
     stdout: SplitParser {
       onRead: function (data) { accountsProc.collected += String(data) + "\n" }
     }
     onExited: {
       var lines = accountsProc.collected.split("\n").filter(function (l) { return l.trim() !== "" })
+      if (lines.indexOf("__YUBIKEY_READ_PASSWORD__") >= 0) {
+        root.readError = "OATH password required — open OATH Accounts"
+        lines = []
+      } else if (lines.indexOf("__YUBIKEY_READ_FAILED__") >= 0) {
+        root.readError = "Could not read key — reinsert it and reopen"
+        lines = []
+      }
       var serial = ""
       if (lines.length && /^[0-9]+$/.test(lines[lines.length - 1].trim())) serial = lines.pop().trim()
       root.serial = serial
@@ -461,7 +474,7 @@ Panel {
           Text {
             width: parent.width
             visible: root.present && root.visibleAccounts.length === 0
-            text: root.loading ? "Reading the key…" : (root.filter ? "Nothing matches that." : "No OATH accounts on this key.")
+            text: root.loading ? "Reading the key…" : (root.readError ? root.readError : (root.filter ? "Nothing matches that." : "No OATH accounts on this key."))
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
